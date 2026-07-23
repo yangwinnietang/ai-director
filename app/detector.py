@@ -51,7 +51,7 @@ class AimResult:
 class YoloDetector:
     def __init__(
         self,
-        model_path: str = "yolo26s.pt",
+        model_path: str = "models/yolo26s.pt",
         confidence: float = 0.2,
         image_size: int | tuple[int, int] | None = None,
         end2end: bool | None = None,

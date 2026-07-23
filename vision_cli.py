@@ -8,6 +8,7 @@ import sys
 
 import cv2
 
+from app.config import settings
 from app.detector import YoloDetector, draw_detections, load_image
 
 
@@ -20,19 +21,25 @@ def main() -> None:
         nargs="+",
         help="One or more target labels or aliases, e.g. person bottle mouse",
     )
-    parser.add_argument("--model", default="yolo26s.pt", help="YOLO model path")
-    parser.add_argument("--confidence", type=float, default=0.2, help="Minimum detection confidence")
-    parser.add_argument("--imgsz", type=int, help="YOLO inference image size, e.g. 960 or 1280")
+    parser.add_argument("--model", default=settings.yolo_model, help="YOLO model path")
+    parser.add_argument("--confidence", type=float, default=settings.yolo_confidence, help="Minimum detection confidence")
+    parser.add_argument(
+        "--imgsz",
+        type=int,
+        default=settings.yolo_image_size,
+        help="YOLO inference image size, e.g. 960 or 1280",
+    )
     parser.add_argument(
         "--diagnostic-confidence",
         type=float,
+        default=settings.yolo_diagnostic_confidence,
         help="Lower confidence used only to report filtered-out target matches",
     )
     parser.add_argument(
         "--end2end",
         dest="end2end",
         action="store_true",
-        default=None,
+        default=settings.yolo_end2end,
         help="Force YOLO end-to-end one-to-one prediction head when supported",
     )
     parser.add_argument(

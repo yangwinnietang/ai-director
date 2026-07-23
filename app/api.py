@@ -3,29 +3,36 @@ from __future__ import annotations
 import os
 import tempfile
 from dataclasses import asdict
+from pathlib import Path
 
 import cv2
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from app.config import settings
 from app.detector import YoloDetector, load_image
-
-
-MODEL_PATH = os.getenv("YOLO_MODEL", "yolo26s.pt")
-CONFIDENCE = float(os.getenv("YOLO_CONFIDENCE", "0.2"))
-IMAGE_SIZE = int(os.getenv("YOLO_IMGSZ")) if os.getenv("YOLO_IMGSZ") else None
-END2END = os.getenv("YOLO_END2END")
-END2END_FLAG = None if END2END is None else END2END.lower() in {"1", "true", "yes", "on"}
-DIAGNOSTIC_CONFIDENCE = (
-    float(os.getenv("YOLO_DIAGNOSTIC_CONFIDENCE")) if os.getenv("YOLO_DIAGNOSTIC_CONFIDENCE") else None
+from app.face_recognition import (
+    FaceRecognitionService,
+    candidate_to_dict,
+    draw_face_match,
+    draw_faces,
+    match_to_dict,
+    registered_to_dict,
 )
+
+
+OUTPUT_DIR = Path("images") / "output"
 
 app = FastAPI(title="Director Vision Tool", version="0.1.0")
 detector = YoloDetector(
-    model_path=MODEL_PATH,
-    confidence=CONFIDENCE,
-    image_size=IMAGE_SIZE,
-    end2end=END2END_FLAG,
+    model_path=settings.yolo_model,
+    confidence=settings.yolo_confidence,
+    image_size=settings.yolo_image_size,
+    end2end=settings.yolo_end2end,
+)
+face_service = FaceRecognitionService(
+    registry_path=settings.face_registry_path,
+    model_name=settings.face_model,
 )
 
 
@@ -35,9 +42,16 @@ class CameraAimRequest(BaseModel):
     tolerance_ratio: float = 0.08
 
 
+class FaceRegisterRequest(BaseModel):
+    identity: str
+    face_id: str
+    threshold: float = settings.face_threshold
+    source_image: str | None = None
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "model": MODEL_PATH}
+    return {"status": "ok", "model": settings.yolo_model, "face_model": settings.face_model}
 
 
 @app.post("/detect/image")
@@ -58,7 +72,7 @@ async def aim_image(
             image,
             target=target,
             tolerance_ratio=tolerance_ratio,
-            diagnostic_confidence=DIAGNOSTIC_CONFIDENCE,
+            diagnostic_confidence=settings.yolo_diagnostic_confidence,
         )
     )
 
@@ -79,9 +93,87 @@ def aim_camera(request: CameraAimRequest) -> dict:
             frame,
             target=request.target,
             tolerance_ratio=request.tolerance_ratio,
-            diagnostic_confidence=DIAGNOSTIC_CONFIDENCE,
+            diagnostic_confidence=settings.yolo_diagnostic_confidence,
         )
     )
+
+
+@app.post("/faces/candidates")
+async def face_candidates(
+    file: UploadFile = File(...),
+    annotate: bool = Form(False),
+    output_name: str | None = Form(None),
+) -> dict:
+    image = await _read_upload(file)
+    try:
+        candidates = face_service.detect_faces(image)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    output_path = None
+    if annotate:
+        output_path = _write_output_image(
+            draw_faces(image, candidates),
+            output_name or _default_output_name(file.filename, "faces"),
+        )
+
+    return {
+        "face_count": len(candidates),
+        "faces": [candidate_to_dict(candidate) for candidate in candidates],
+        "output_path": output_path,
+    }
+
+
+@app.post("/faces/register")
+def register_face(request: FaceRegisterRequest) -> dict:
+    try:
+        registered = face_service.register_candidate(
+            identity=request.identity,
+            face_id=request.face_id,
+            threshold=request.threshold,
+            source_image=request.source_image,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return registered_to_dict(registered)
+
+
+@app.post("/faces/recognize")
+async def recognize_face(
+    identity: str = Form(...),
+    threshold: float | None = Form(None),
+    annotate: bool = Form(False),
+    output_name: str | None = Form(None),
+    file: UploadFile = File(...),
+) -> dict:
+    image = await _read_upload(file)
+    try:
+        match = face_service.recognize_identity(
+            image=image,
+            identity=identity,
+            threshold=threshold,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    output_path = None
+    if annotate:
+        output_path = _write_output_image(
+            draw_face_match(image, match),
+            output_name or _default_output_name(file.filename, identity),
+        )
+
+    result = match_to_dict(match)
+    result["output_path"] = output_path
+    return result
+
+
+@app.get("/faces/identities")
+def face_identities() -> dict:
+    return {"identities": face_service.identities()}
 
 
 async def _read_upload(file: UploadFile):
@@ -99,3 +191,17 @@ async def _read_upload(file: UploadFile):
             os.unlink(tmp_path)
         except OSError:
             pass
+
+
+def _write_output_image(image, output_name: str) -> str:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_path = OUTPUT_DIR / Path(output_name).name
+    if not cv2.imwrite(str(output_path), image):
+        raise HTTPException(status_code=500, detail=f"Could not write output image: {output_path}")
+    return str(output_path)
+
+
+def _default_output_name(filename: str | None, suffix: str) -> str:
+    image_path = Path(filename or "upload.jpg")
+    image_suffix = image_path.suffix or ".jpg"
+    return f"{image_path.stem}_{suffix}{image_suffix}"

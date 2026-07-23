@@ -42,6 +42,36 @@ Aim from camera index 0:
 curl -X POST http://127.0.0.1:8000/aim/camera -H "Content-Type: application/json" -d '{"target":"person","camera_index":0}'
 ```
 
+## Face Recognition API
+
+The face recognition flow supports on-scene identity binding for a future web UI. It uses InsightFace `buffalo_l` by default and stores temporary identities in `data/face_registry.json`.
+
+First, upload a panorama or current frame to get selectable face boxes:
+
+```powershell
+curl -X POST http://127.0.0.1:8000/faces/candidates -F "file=@images/0001.jpg" -F "annotate=true"
+```
+
+Then bind one returned `face_id` to a role such as `male_lead`:
+
+```powershell
+curl -X POST http://127.0.0.1:8000/faces/register -H "Content-Type: application/json" -d '{"identity":"male_lead","face_id":"FACE_ID_FROM_CANDIDATES"}'
+```
+
+Recognize that identity in later frames:
+
+```powershell
+curl -X POST http://127.0.0.1:8000/faces/recognize -F "identity=male_lead" -F "file=@images/0002.jpg" -F "annotate=true"
+```
+
+List registered scene identities:
+
+```powershell
+curl http://127.0.0.1:8000/faces/identities
+```
+
+Annotated face images are written to `images\output`. If dependencies or model weights are missing, the face endpoints return a clear service error while the YOLO endpoints keep working.
+
 ## CLI
 
 ```powershell
@@ -88,7 +118,7 @@ python vision_cli.py sample.jpg --target person bottle mouse
 If model download is interrupted, delete the partial weight file and run again. When using the bundled local model, this should not be needed:
 
 ```powershell
-Remove-Item .\yolo26s.pt
+Remove-Item .\models\yolo26s.pt
 ```
 
 ## Output Contract
@@ -132,8 +162,11 @@ curl http://127.0.0.1:8000/health
 Configuration lives in `/opt/director-vision/.env`:
 
 ```bash
-YOLO_MODEL=yolo26s.pt
+YOLO_MODEL=models/yolo26s.pt
 YOLO_CONFIDENCE=0.2
+FACE_MODEL=buffalo_l
+FACE_THRESHOLD=0.45
+FACE_REGISTRY_PATH=data/face_registry.json
 ```
 
 If you train a custom model, put the `.pt` file on the Ubuntu machine and set `YOLO_MODEL=/path/to/best.pt`.
