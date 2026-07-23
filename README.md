@@ -36,6 +36,34 @@ Aim at a target in an uploaded image:
 curl -X POST http://127.0.0.1:8000/aim/image -F "target=person" -F "file=@sample.jpg"
 ```
 
+Robot-side object boxes use a compact contract with the object name plus top-left and bottom-right coordinates:
+
+```powershell
+curl -X POST http://127.0.0.1:8000/robot/detect/image -F "file=@images/0001.jpg"
+```
+
+To return only one target type, pass `target`:
+
+```powershell
+curl -X POST http://127.0.0.1:8000/robot/detect/image -F "target=person" -F "file=@images/0001.jpg"
+```
+
+Response shape:
+
+```json
+{
+  "object_count": 1,
+  "objects": [
+    {
+      "object_name": "person",
+      "confidence": 0.94,
+      "top_left": {"x": 2, "y": 1115},
+      "bottom_right": {"x": 632, "y": 1703}
+    }
+  ]
+}
+```
+
 Aim from camera index 0:
 
 ```powershell

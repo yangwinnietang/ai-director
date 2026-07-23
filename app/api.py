@@ -19,6 +19,7 @@ from app.face_recognition import (
     match_to_dict,
     registered_to_dict,
 )
+from app.labels import resolve_target_classes
 
 
 OUTPUT_DIR = Path("images") / "output"
@@ -58,6 +59,23 @@ def health() -> dict[str, str]:
 async def detect_image(file: UploadFile = File(...)) -> list[dict]:
     image = await _read_upload(file)
     return [asdict(detection) for detection in detector.detect(image)]
+
+
+@app.post("/robot/detect/image")
+async def robot_detect_image(
+    file: UploadFile = File(...),
+    target: str | None = Form(None),
+) -> dict:
+    image = await _read_upload(file)
+    detections = detector.detect(image)
+    if target:
+        accepted_labels = set(resolve_target_classes(target))
+        detections = [detection for detection in detections if detection.label in accepted_labels]
+
+    return {
+        "object_count": len(detections),
+        "objects": [_robot_object_from_detection(detection) for detection in detections],
+    }
 
 
 @app.post("/aim/image")
@@ -205,3 +223,13 @@ def _default_output_name(filename: str | None, suffix: str) -> str:
     image_path = Path(filename or "upload.jpg")
     image_suffix = image_path.suffix or ".jpg"
     return f"{image_path.stem}_{suffix}{image_suffix}"
+
+
+def _robot_object_from_detection(detection) -> dict:
+    x1, y1, x2, y2 = detection.box
+    return {
+        "object_name": detection.label,
+        "confidence": detection.confidence,
+        "top_left": {"x": x1, "y": y1},
+        "bottom_right": {"x": x2, "y": y2},
+    }
