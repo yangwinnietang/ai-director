@@ -23,18 +23,3 @@ yarn-error.log
 dist/
 build/
 *.egg-info/
-
-# Logs and runtime output
-*.log
-logs/
-tmp/
-temp/
-
-# ML model weights
-*.pt
-*.pth
-*.onnx
-*.engine
-*.partial
-runs/
-outputs/
