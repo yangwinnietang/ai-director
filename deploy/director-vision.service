@@ -1,0 +1,17 @@
+[Unit]
+Description=Director Vision YOLO API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/director-vision
+EnvironmentFile=/opt/director-vision/.env
+ExecStart=/opt/director-vision/.venv/bin/uvicorn app.api:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=3
+User=director
+Group=director
+
+[Install]
+WantedBy=multi-user.target
